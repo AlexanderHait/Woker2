@@ -78,6 +78,7 @@
         <a class="ctl" href="?utm_source=yandex&utm_medium=cpc&utm_campaign=test_spring&utm_content=banner_1&yclid=99887766">Открыть с метками</a>
         <a class="ctl" href="./hostile.html">Чужие агрессивные стили</a>
         <a class="ctl" href="./blocked.html">Аналитика заблокирована</a>
+        <a class="ctl" href="?ymlog=1">Показать вызовы аналитики</a>
       </div>
       <ol class="muted" style="margin-top:12px">
         <li>Метки: откройте страницу с метками и посмотрите адрес кнопки в контекстном меню.</li>
@@ -94,6 +95,12 @@
       <h3 style="font-size:14px;margin:8px 0 4px">Клики</h3>
       <table><thead><tr><th>Время</th><th>Источник</th><th>Кнопка</th><th>Цель</th><th>Как</th><th>Метки</th></tr></thead>
         <tbody id="clicks"><tr><td colspan="6" class="muted">пусто</td></tr></tbody></table>
+      <div id="ymbox" hidden>
+        <h3 style="font-size:14px;margin:16px 0 4px">Вызовы аналитики (режим <code>?ymlog=1</code>)</h3>
+        <table><thead><tr><th>Время</th><th>Счётчик</th><th>Метод</th><th>Цель</th><th>Параметры</th></tr></thead>
+          <tbody id="ym"></tbody></table>
+      </div>
+
       <h3 style="font-size:14px;margin:16px 0 4px">Заявки</h3>
       <table><thead><tr><th>Время</th><th>Источник</th><th>Телефон</th><th>Ответы</th><th>Метки</th></tr></thead>
         <tbody id="leads"><tr><td colspan="5" class="muted">пусто</td></tr></tbody></table>
@@ -102,6 +109,22 @@
 
 </div>
 
+<script>
+// Демо-режим ?ymlog=1: подменяем Метрику заглушкой, чтобы видеть её вызовы прямо на странице.
+// Работает до загрузки виджета — он увидит уже «установленный» счётчик и возьмёт его.
+(function () {
+  if (!/[?&]ymlog=1/.test(location.search)) return;
+  window.__ymLog = [];
+  window.ym = function () {
+    var args = [].slice.call(arguments);
+    var named = typeof args[2] === 'string';
+    window.__ymLog.push({ at: new Date().toLocaleTimeString(), counter: args[0], method: args[1],
+                          name: named ? args[2] : '', params: named ? args[3] : args[2] });
+    if (typeof args[4] === 'function') setTimeout(args[4], 30);
+  };
+  window.ym.a = [];
+})();
+</script>
 <script async src="/widget.js"></script>
 <script>
 (function () {
@@ -155,6 +178,18 @@
         .then(refresh).catch(refresh);
     });
   });
+
+  if (window.__ymLog) {
+    var ymbox = document.getElementById('ymbox');
+    var ymbody = document.getElementById('ym');
+    ymbox.hidden = false;
+    setInterval(function () {
+      fill(ymbody, window.__ymLog, function (row, c) {
+        cell(row, c.at); cell(row, c.counter); cell(row, c.method);
+        cell(row, c.name); cell(row, c.params ? JSON.stringify(c.params) : '');
+      }, 5);
+    }, 700);
+  }
 
   document.getElementById('refresh').addEventListener('click', refresh);
   refresh();
