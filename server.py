@@ -15,6 +15,7 @@ import json
 import mimetypes
 import os
 import re
+import socket
 import threading
 import time
 import webbrowser
@@ -63,6 +64,18 @@ def load_seen_leads():
     for row in tail(LEADS, 100000):
         if row.get('id'):
             seen_leads.add(row['id'])
+
+
+def local_ip():
+    """Адрес машины в локальной сети — чтобы открыть демо с телефона."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(('192.168.0.1', 1))
+        return sock.getsockname()[0]
+    except OSError:
+        return '127.0.0.1'
+    finally:
+        sock.close()
 
 
 def load_sources():
@@ -255,14 +268,14 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json({'error': 'bad mode'}, 400)
 
 
-def run(port, open_browser=True, verbose=True):
+def run(port, open_browser=True, verbose=True, host='127.0.0.1'):
     os.makedirs(DATA, exist_ok=True)
     load_seen_leads()
 
     httpd = None
     for candidate in range(port, port + 10):
         try:
-            httpd = ThreadingHTTPServer(('127.0.0.1', candidate), Handler)
+            httpd = ThreadingHTTPServer((host, candidate), Handler)
             port = candidate
             break
         except OSError:
@@ -272,8 +285,10 @@ def run(port, open_browser=True, verbose=True):
 
     httpd.verbose = verbose
     httpd.daemon_threads = True
-    url = 'http://127.0.0.1:%d/' % port
+    url = 'http://%s:%d/' % ('127.0.0.1' if host in ('0.0.0.0', '') else host, port)
     print('Демо: %s' % url)
+    if host == '0.0.0.0':
+        print('С телефона в той же сети: http://%s:%d/' % (local_ip(), port))
     print('Заявки: data/leads.jsonl, клики: data/clicks.jsonl. Остановить — Ctrl+C.')
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
@@ -289,7 +304,8 @@ def run(port, open_browser=True, verbose=True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Демо-сервер виджета')
     parser.add_argument('--port', type=int, default=8080)
+    parser.add_argument('--host', default='127.0.0.1', help='0.0.0.0 — чтобы открыть демо с телефона')
     parser.add_argument('--no-open', action='store_true', help='не открывать браузер')
     parser.add_argument('--quiet', action='store_true', help='не писать лог запросов')
     args = parser.parse_args()
-    run(args.port, open_browser=not args.no_open, verbose=not args.quiet)
+    run(args.port, open_browser=not args.no_open, verbose=not args.quiet, host=args.host)
