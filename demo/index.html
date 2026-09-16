@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Демо: виджет заявок и кнопок</title>
+<style>
+  body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #15181c; background: #f4f6f8; }
+  .page { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  p.lead { margin: 0 0 20px; color: #5c6670; }
+  .cols { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  .card { flex: 1 1 320px; background: #fff; border: 1px solid #e2e7ec; border-radius: 12px; padding: 16px; }
+  .card--wide { flex-basis: 100%; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  button.ctl, a.ctl { padding: 8px 12px; border: 1px solid #c9d1d9; border-radius: 8px; background: #fff; font: inherit; font-size: 14px; color: #15181c; text-decoration: none; cursor: pointer; }
+  button.ctl:hover, a.ctl:hover { background: #f0f3f6; }
+  button.ctl[aria-pressed="true"] { border-color: #3f74d8; background: #eaf0fc; }
+  code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #edf0f3; vertical-align: top; }
+  th { color: #5c6670; font-weight: 600; }
+  .muted { color: #7b848e; font-size: 13px; }
+  ol { padding-left: 20px; }
+  ol li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Виджет: кнопки в мессенджеры и форма заявки</h1>
+  <p class="lead">Страница для проверки сценариев из задания. Ниже — два независимых блока виджета
+  с разными настройками, переключатели состояния сервера и журнал того, что доехало на бэкенд.</p>
+
+  <div class="cols">
+    <div class="card">
+      <h2>Блок 1 — <code>landing-tg</code></h2>
+      <p class="muted">Три кнопки и форма из четырёх шагов. Счётчик Метрики 12345678.</p>
+      <div data-cw data-cw-source="landing-tg" data-cw-counter="12345678"></div>
+    </div>
+
+    <div class="card">
+      <h2>Блок 2 — <code>partner-max</code></h2>
+      <p class="muted">Только кнопки, другой счётчик, вторая кнопка уходит в приложение
+      через <code>tg://</code> в текущей вкладке.</p>
+      <div data-cw data-cw-source="partner-max" data-cw-counter="87654321"></div>
+    </div>
+
+    <div class="card">
+      <h2>Блок 3 — <code>promo-form</code></h2>
+      <p class="muted">Форма спрятана за кнопкой, состав шагов другой.</p>
+      <div data-cw data-cw-source="promo-form" data-cw-counter="12345678"></div>
+    </div>
+  </div>
+
+  <div class="cols" style="margin-top:16px">
+    <div class="card">
+      <h2>Состояние сервера настроек</h2>
+      <div class="row" id="cfg-modes">
+        <button class="ctl" data-target="config" data-mode="ok">Работает</button>
+        <button class="ctl" data-target="config" data-mode="fail">Сломать (500)</button>
+        <button class="ctl" data-target="config" data-mode="slow">Замедлить (6 с)</button>
+        <button class="ctl" data-target="config" data-mode="empty">Пустой список</button>
+      </div>
+      <h2 style="margin-top:14px">Состояние приёма заявок</h2>
+      <div class="row" id="lead-modes">
+        <button class="ctl" data-target="lead" data-mode="ok">Работает</button>
+        <button class="ctl" data-target="lead" data-mode="fail">Сломать (503)</button>
+        <button class="ctl" data-target="lead" data-mode="slow">Замедлить (6 с)</button>
+      </div>
+      <p class="muted">После переключения обновите страницу — настройки запрашиваются один раз при загрузке.</p>
+    </div>
+
+    <div class="card">
+      <h2>Проверки</h2>
+      <div class="row">
+        <a class="ctl" href="?utm_source=yandex&utm_medium=cpc&utm_campaign=test_spring&utm_content=banner_1&yclid=99887766">Открыть с метками</a>
+        <a class="ctl" href="./hostile.html">Чужие агрессивные стили</a>
+        <a class="ctl" href="./blocked.html">Аналитика заблокирована</a>
+      </div>
+      <ol class="muted" style="margin-top:12px">
+        <li>Метки: откройте страницу с метками и посмотрите адрес кнопки в контекстном меню.</li>
+        <li>Отправка без сети: включите офлайн в DevTools и отправьте форму.</li>
+        <li>Прогресс: пройдите два шага и обновите страницу.</li>
+        <li>Двойная отправка: быстро нажмите «Отправить» два раза — заявка в журнале одна.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="cols" style="margin-top:16px">
+    <div class="card card--wide">
+      <h2>Что доехало на сервер <button class="ctl" id="refresh" style="float:right">Обновить</button></h2>
+      <h3 style="font-size:14px;margin:8px 0 4px">Клики</h3>
+      <table><thead><tr><th>Время</th><th>Источник</th><th>Кнопка</th><th>Цель</th><th>Как</th><th>Метки</th></tr></thead>
+        <tbody id="clicks"><tr><td colspan="6" class="muted">пусто</td></tr></tbody></table>
+      <h3 style="font-size:14px;margin:16px 0 4px">Заявки</h3>
+      <table><thead><tr><th>Время</th><th>Источник</th><th>Телефон</th><th>Ответы</th><th>Метки</th></tr></thead>
+        <tbody id="leads"><tr><td colspan="5" class="muted">пусто</td></tr></tbody></table>
+    </div>
+  </div>
+
+</div>
+
+<script async src="/widget.js"></script>
+<script>
+(function () {
+  var clicks = document.getElementById('clicks');
+  var leads = document.getElementById('leads');
+
+  function cell(row, text) {
+    var td = document.createElement('td');
+    td.textContent = text == null ? '' : String(text);
+    row.appendChild(td);
+  }
+
+  function tags(map) {
+    return Object.keys(map || {}).map(function (k) { return k + '=' + map[k]; }).join(', ');
+  }
+
+  function fill(tbody, rows, build, cols) {
+    tbody.textContent = '';
+    if (!rows.length) {
+      var empty = tbody.insertRow();
+      var td = document.createElement('td');
+      td.colSpan = cols;
+      td.className = 'muted';
+      td.textContent = 'пусто';
+      empty.appendChild(td);
+      return;
+    }
+    rows.slice().reverse().forEach(function (item) { build(tbody.insertRow(), item); });
+  }
+
+  function refresh() {
+    fetch('/api/_state').then(function (r) { return r.json(); }).then(function (state) {
+      fill(clicks, state.clicks, function (row, c) {
+        cell(row, c.at); cell(row, c.source); cell(row, c.button);
+        cell(row, c.goal); cell(row, c.how); cell(row, tags(c.tags));
+      }, 6);
+      fill(leads, state.leads, function (row, l) {
+        cell(row, l.at); cell(row, l.source); cell(row, l.phone);
+        cell(row, JSON.stringify(l.answers)); cell(row, tags(l.tags));
+      }, 5);
+      document.querySelectorAll('.ctl[data-mode]').forEach(function (btn) {
+        var active = state.mode[btn.dataset.target] === btn.dataset.mode;
+        btn.setAttribute('aria-pressed', String(active));
+      });
+    }).catch(function () { /* сервер выключен — журнал просто не обновится */ });
+  }
+
+  document.querySelectorAll('.ctl[data-mode]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      fetch('/api/_mode?target=' + btn.dataset.target + '&mode=' + btn.dataset.mode)
+        .then(refresh).catch(refresh);
+    });
+  });
+
+  document.getElementById('refresh').addEventListener('click', refresh);
+  refresh();
+  setInterval(refresh, 4000);
+})();
+</script>
+</body>
+</html>

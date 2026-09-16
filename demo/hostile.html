@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Демо: чужие агрессивные стили</title>
+
+<!-- Скрипт подключён дважды: в шапке и в подвале. Кнопки задваиваться не должны. -->
+<script async src="/widget.js"></script>
+
+<style>
+  /* Так выглядит «чужой сайт», владелец которого любит !important. */
+  * {
+    font-family: "Comic Sans MS", cursive !important;
+    font-size: 21px !important;
+    line-height: 2.4 !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    color: #d81b60 !important;
+    text-align: center !important;
+  }
+  div { border: 2px dashed #d81b60 !important; padding: 6px !important; }
+  a { color: #00e676 !important; text-decoration: underline wavy !important; }
+  button, input, textarea, label, fieldset, legend {
+    background: #ffeb3b !important;
+    border-radius: 0 !important;
+    padding: 18px !important;
+  }
+  body { background: repeating-linear-gradient(45deg, #fff, #fff 12px, #fce4ec 12px, #fce4ec 24px); margin: 0 }
+  .page { max-width: 760px; margin: 0 auto; padding: 24px 12px 60px }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Агрессивные стили чужого сайта</h1>
+  <p>Всё на этой странице переопределено через <code>!important</code>, а скрипт виджета подключён
+  дважды. Виджет ниже обязан выглядеть так же, как на обычной демо-странице, и быть в одном экземпляре.</p>
+
+  <div data-cw data-cw-source="landing-tg" data-cw-counter="12345678"></div>
+
+  <p><a href="./index.html">← назад на демо</a></p>
+</div>
+
+<script async src="/widget.js"></script>
+</body>
+</html>

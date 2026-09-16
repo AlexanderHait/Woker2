@@ -1,0 +1,162 @@
+{
+  "landing-tg": {
+    "title": "Напишите нам",
+    "subtitle": "Ответим в мессенджере или перезвоним сами",
+    "buttons": [
+      {
+        "id": "tg",
+        "label": "Написать в Telegram",
+        "url": "https://t.me/durov_bot",
+        "color": "#2aabee",
+        "goal": "click_telegram",
+        "tags": "start"
+      },
+      {
+        "id": "max",
+        "label": "Написать в MAX",
+        "url": "https://max.ru/support?ref=widget",
+        "color": "#5b46f0",
+        "goal": "click_max",
+        "tags": "query"
+      },
+      {
+        "id": "wa",
+        "label": "Написать в WhatsApp",
+        "url": "https://wa.me/79000000000?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5%21",
+        "color": "#25d366",
+        "goal": "click_whatsapp",
+        "tags": "text"
+      }
+    ],
+    "form": {
+      "version": 3,
+      "collapsed": false,
+      "submitUrl": "/api/lead",
+      "submitLabel": "Отправить заявку",
+      "success": "Перезвоним в рабочее время, с 10:00 до 19:00 по Москве.",
+      "goals": {
+        "open": "form_open",
+        "step": "form_step",
+        "submit": "form_submit",
+        "sent": "form_sent"
+      },
+      "steps": [
+        {
+          "id": "task",
+          "type": "single",
+          "question": "С чем нужна помощь?",
+          "options": [
+            { "value": "landing", "label": "Посадочная страница" },
+            { "value": "ads", "label": "Реклама и трафик" },
+            { "value": "analytics", "label": "Аналитика и отчёты" },
+            { "value": "other", "label": "Другое" }
+          ]
+        },
+        {
+          "id": "have",
+          "type": "multi",
+          "question": "Что уже есть?",
+          "hint": "Можно выбрать несколько или пропустить",
+          "required": false,
+          "options": [
+            { "value": "site", "label": "Сайт" },
+            { "value": "crm", "label": "CRM" },
+            { "value": "metrika", "label": "Метрика или GA" },
+            { "value": "nothing", "label": "Пока ничего" }
+          ]
+        },
+        {
+          "id": "details",
+          "type": "text",
+          "question": "Коротко о задаче",
+          "hint": "Необязательно, но так мы подготовимся к звонку",
+          "required": false,
+          "placeholder": "Например: лиды идут, но не понимаем, с какой рекламы",
+          "maxLength": 600
+        },
+        {
+          "id": "phone",
+          "type": "phone",
+          "question": "Куда перезвонить?",
+          "placeholder": "+7 900 000-00-00",
+          "consent": "Отправляя заявку, вы соглашаетесь на обработку персональных данных."
+        }
+      ]
+    }
+  },
+
+  "partner-max": {
+    "title": "Связаться с нами",
+    "buttons": [
+      {
+        "id": "max",
+        "label": "Написать в MAX",
+        "url": "https://max.ru/support?ref=partner",
+        "color": "#5b46f0",
+        "goal": "click_max",
+        "tags": "query"
+      },
+      {
+        "id": "tg-app",
+        "label": "Открыть Telegram в приложении",
+        "url": "tg://resolve?domain=durov_bot",
+        "color": "#2aabee",
+        "goal": "click_telegram",
+        "tags": "query",
+        "newTab": false
+      }
+    ],
+    "form": null
+  },
+
+  "promo-form": {
+    "title": "Нужен расчёт?",
+    "subtitle": "Четыре вопроса, меньше минуты",
+    "buttons": [
+      {
+        "id": "tg",
+        "label": "Написать в Telegram",
+        "url": "https://t.me/durov_bot",
+        "color": "#2aabee",
+        "goal": "click_telegram",
+        "tags": "start"
+      }
+    ],
+    "form": {
+      "version": 2,
+      "collapsed": true,
+      "openLabel": "Оставить заявку",
+      "submitUrl": "/api/lead",
+      "submitLabel": "Отправить",
+      "success": "Спасибо, заявка у нас. Свяжемся в течение дня.",
+      "steps": [
+        {
+          "id": "budget",
+          "type": "single",
+          "question": "Бюджет на месяц",
+          "options": [
+            { "value": "50", "label": "До 50 000 ₽" },
+            { "value": "150", "label": "50 000 — 150 000 ₽" },
+            { "value": "500", "label": "Больше 150 000 ₽" }
+          ]
+        },
+        {
+          "id": "channels",
+          "type": "multi",
+          "question": "Какие каналы интересны?",
+          "options": [
+            { "value": "direct", "label": "Яндекс Директ" },
+            { "value": "vk", "label": "VK Реклама" },
+            { "value": "seo", "label": "SEO" }
+          ]
+        },
+        {
+          "id": "phone",
+          "type": "phone",
+          "question": "Телефон для связи",
+          "placeholder": "+7 900 000-00-00"
+        }
+      ]
+    }
+  }
+}
