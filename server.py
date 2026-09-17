@@ -66,6 +66,17 @@ def load_seen_leads():
             seen_leads.add(row['id'])
 
 
+def is_local(address):
+    """Служебные ручки демо открыты только своей машине и локальной сети."""
+    if address in ('127.0.0.1', '::1'):
+        return True
+    parts = address.split('.')
+    if len(parts) != 4 or not all(part.isdigit() for part in parts):
+        return False
+    a, b = int(parts[0]), int(parts[1])
+    return a == 10 or a == 127 or (a == 192 and b == 168) or (a == 172 and 16 <= b <= 31)
+
+
 def local_ip():
     """Адрес машины в локальной сети — чтобы открыть демо с телефона."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -138,13 +149,32 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def read_body(self):
+        """Тело читаем всегда и целиком, даже если ответим отказом: на keep-alive
+        соединении непрочитанный остаток разберётся как следующий запрос."""
         length = int(self.headers.get('Content-Length') or 0)
-        if length <= 0 or length > MAX_BODY:
+        if length <= 0:
+            return None
+        raw = b''
+        left = length
+        while left > 0:
+            chunk = self.rfile.read(min(left, 16 * 1024))
+            if not chunk:
+                break
+            left -= len(chunk)
+            if len(raw) < MAX_BODY:
+                raw += chunk
+        if length > MAX_BODY:
             return None
         try:
-            return json.loads(self.rfile.read(length).decode('utf-8'))
+            return json.loads(raw.decode('utf-8'))
         except (ValueError, UnicodeDecodeError):
             return None
+
+    def demo_only(self):
+        if is_local(self.client_address[0]):
+            return True
+        self.send_json({'error': 'demo endpoint, local network only'}, 403)
+        return False
 
     def log_message(self, fmt, *args):
         if self.server.verbose:
@@ -166,12 +196,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/config':
             return self.api_config(query)
         if path == '/api/_state':
+            if not self.demo_only():
+                return
             return self.send_json({
                 'mode': demo_mode,
                 'clicks': tail(CLICKS, 20),
                 'leads': tail(LEADS, 20),
             })
         if path == '/api/_mode':
+            if not self.demo_only():
+                return
             return self.api_mode(query)
 
         if path == '/':
@@ -186,10 +220,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        data = self.read_body()
         if path == '/api/lead':
-            return self.api_lead()
+            return self.api_lead(data)
         if path == '/api/click':
-            return self.api_click()
+            return self.api_click(data)
         self.send_json({'error': 'not found'}, 404)
 
     # ------------------------------------------------------------ обработка
@@ -213,8 +248,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'buttons': [], 'form': None}, 404)
         return self.send_json(config)
 
-    def api_click(self):
-        data = self.read_body() or {}
+    def api_click(self, data):
+        data = data or {}
         log_line(CLICKS, {
             'at': time.strftime('%Y-%m-%d %H:%M:%S'),
             'cid': data.get('cid'),
@@ -227,13 +262,12 @@ class Handler(BaseHTTPRequestHandler):
         })
         self.send_json({'ok': True})
 
-    def api_lead(self):
+    def api_lead(self, data):
         if demo_mode['lead'] == 'fail':
             return self.send_json({'error': 'server is down'}, 503)
         if demo_mode['lead'] == 'slow':
             time.sleep(6)
 
-        data = self.read_body()
         if not data or not data.get('id'):
             return self.send_json({'error': 'bad request'}, 400)
 

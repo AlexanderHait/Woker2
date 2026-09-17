@@ -6,6 +6,7 @@
     python3 selftest.py
 """
 
+import http.client
 import json
 import threading
 import time
@@ -78,6 +79,25 @@ class ServerTest(unittest.TestCase):
 
         leads = get('/api/_state')[1]['leads']
         self.assertEqual(1, len([row for row in leads if row['id'] == lead['id']]))
+
+    def test_rejected_lead_keeps_connection_usable(self):
+        """Отказ не должен оставлять тело запроса в сокете: иначе следующий запрос
+        на том же соединении разберётся как мусор и виджет останется без настроек."""
+        get('/api/_mode?target=lead&mode=fail')
+        conn = http.client.HTTPConnection('127.0.0.1', PORT, timeout=10)
+        conn.request('POST', '/api/lead',
+                     body=json.dumps({'id': 'keepalive', 'phone': '+79990000000'}),
+                     headers={'Content-Type': 'text/plain;charset=UTF-8'})
+        first = conn.getresponse()
+        first.read()
+        self.assertEqual(503, first.status)
+
+        conn.request('GET', '/api/config?source=landing-tg')
+        second = conn.getresponse()
+        payload = json.loads(second.read().decode('utf-8'))
+        conn.close()
+        self.assertEqual(200, second.status)
+        self.assertEqual(3, len(payload['buttons']))
 
     def test_lead_without_id_rejected(self):
         self.assertEqual(400, post('/api/lead', {'phone': '+79990000000'})[0])

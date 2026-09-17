@@ -310,7 +310,9 @@
 
     function settle(id, status) {
       var cb = waiting[id];
-      delete waiting[id];
+      // 'queued' — не конец истории: заявка ещё в очереди, и подписка нужна,
+      // чтобы показать человеку подтверждение, когда она всё-таки уйдёт.
+      if (status !== 'queued') delete waiting[id];
       if (cb) cb(status);
     }
 
@@ -374,7 +376,12 @@
       flush();
     }
 
-    function pending() { return all(); }
+    // Заявка осталась в очереди с прошлой загрузки — форма подписывается на её судьбу.
+    function watch(id, onResult) {
+      var found = all().some(function (item) { return item.id === id; });
+      if (found) waiting[id] = onResult;
+      return found;
+    }
 
     window.addEventListener('online', function () { flush(); });
     // Вкладку закрывают с неотправленной заявкой — отдаём её маячком.
@@ -392,7 +399,7 @@
 
     flush();   // на загрузке страницы дошлём то, что осталось с прошлого раза
 
-    return { add: add, flush: flush, pending: pending };
+    return { add: add, flush: flush, watch: watch };
   })();
 
   /* --------------------------------------------------------------- телефон */
@@ -563,7 +570,11 @@
         // и запросу аналитики никто не мешает доехать. Для схем вида tg:// вкладка
         // осталась бы пустой, поэтому там переходим в текущей.
         var newTab = btn.newTab != null ? !!btn.newTab : /^https?:/i.test(href);
-        if (newTab) link.target = '_blank';
+        if (newTab) {
+          link.target = '_blank';
+          // Диктор предупредит про новую вкладку; видимая подпись не меняется.
+          link.setAttribute('aria-label', (btn.label || 'Написать') + ', откроется в новой вкладке');
+        }
 
         link.addEventListener('click', function (event) {
           if (event.defaultPrevented) return;
@@ -638,6 +649,7 @@
 
       var state = restore();
       var status = 'filling';        // filling | sending | sent | queued | failed
+      if (outbox.watch(state.leadId, function (result) { onSendResult(result); })) status = 'queued';
       var touched = false;
       var announced = null;
 
@@ -890,20 +902,22 @@
           tags: campaignTags,
           page: location.href,
           ts: Date.now()
-        }, function (result) {
-          if (result === 'sent') {
-            status = 'sent';
-            goal(goals.sent || 'form_sent', { source: source });
-          } else if (result === 'rejected') {
-            status = 'failed';
-          } else {
-            status = 'queued';
-          }
+        }, onSendResult);
+      }
+
+      function onSendResult(result) {
+        if (result === 'sent') {
+          status = 'sent';
+          goal(goals.sent || 'form_sent', { source: source });
           // Ответы стираем только после подтверждённой отправки: если сервер заявку
-          // не принял, человек перезагрузит страницу и продолжит с теми же ответами.
-          if (result === 'sent') store.remove(stateKey);
-          draw();
-        });
+          // не принял, человек вернётся на страницу и продолжит с теми же ответами.
+          store.remove(stateKey);
+        } else if (result === 'rejected') {
+          status = 'failed';
+        } else {
+          status = 'queued';
+        }
+        draw();
       }
 
       function drawResult() {
