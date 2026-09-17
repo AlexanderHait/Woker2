@@ -47,6 +47,7 @@ class ServerTest(unittest.TestCase):
     def tearDown(self):
         get('/api/_mode?target=config&mode=ok')
         get('/api/_mode?target=lead&mode=ok')
+        server.lead_hits.clear()
 
     def test_config(self):
         status, body = get('/api/config?source=landing-tg')
@@ -54,6 +55,8 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(3, len(body['buttons']))
         self.assertEqual(4, len(body['form']['steps']))
         self.assertEqual('phone', body['form']['steps'][-1]['type'])
+        self.assertEqual('light', body['theme'])
+        self.assertEqual('widget_view', body['goals']['view'])
 
     def test_unknown_source(self):
         status, body = get('/api/config?source=nope')
@@ -115,12 +118,41 @@ class ServerTest(unittest.TestCase):
         for raw, expected in cases.items():
             self.assertEqual(expected, server.normalize_phone(raw), raw)
 
-    def test_click_is_logged(self):
+    def test_events_are_logged(self):
         cid = 'click-%d' % time.time()
-        post('/api/click', {'cid': cid, 'source': 'landing-tg', 'button': 'tg',
+        post('/api/event', {'kind': 'view', 'source': 'landing-tg', 'goal': 'widget_view'})
+        post('/api/event', {'kind': 'click', 'cid': cid, 'source': 'landing-tg', 'button': 'tg',
                             'goal': 'click_telegram', 'tags': {'utm_source': 'yandex'}})
-        clicks = get('/api/_state')[1]['clicks']
-        self.assertTrue(any(row['cid'] == cid for row in clicks))
+        events = get('/api/_state')[1]['events']
+        self.assertTrue(any(row.get('cid') == cid and row['kind'] == 'click' for row in events))
+        self.assertTrue(any(row['kind'] == 'view' for row in events))
+        self.assertEqual(400, post('/api/event', {'kind': 'что-то своё'})[0])
+
+    def test_suspicious_lead_is_kept_but_marked(self):
+        """Заявку с признаками бота всё равно принимаем — решать должен человек."""
+        lead = {'id': 'trap-%d' % time.time(), 'source': 'landing-tg',
+                'phone': '+79990001122', 'trap': 'ООО Ромашка', 'elapsed_ms': 800}
+        status, body = post('/api/lead', lead)
+        self.assertEqual(200, status)
+        self.assertTrue(body['suspicious'])
+        row = [r for r in get('/api/_state')[1]['leads'] if r['id'] == lead['id']][0]
+        self.assertEqual(['trap', 'too_fast'], row['suspicious'])
+
+    def test_queued_lead_keeps_its_age(self):
+        lead = {'id': 'aged-%d' % time.time(), 'source': 'landing-tg',
+                'phone': '+79990003344', 'queued_ms': 7200000}
+        post('/api/lead', lead)
+        row = [r for r in get('/api/_state')[1]['leads'] if r['id'] == lead['id']][0]
+        self.assertEqual(7200000, row['queued_ms'])
+
+    def test_rate_limit(self):
+        for i in range(server.LEAD_LIMIT + 2):
+            status, _ = post('/api/lead', {'id': 'flood-%d-%d' % (time.time(), i),
+                                           'phone': '+7999000%04d' % i})
+            if status == 429:
+                break
+        self.assertEqual(429, status)
+        server.lead_hits.clear()
 
     def test_widget_is_served_with_cors(self):
         with urllib.request.urlopen(BASE + '/widget.js', timeout=10) as res:

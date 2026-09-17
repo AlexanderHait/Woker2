@@ -42,14 +42,15 @@
 
     <div class="card">
       <h2>Блок 2 — <code>partner-max</code></h2>
-      <p class="muted">Только кнопки, другой счётчик, вторая кнопка уходит в приложение
-      через <code>tg://</code> в текущей вкладке.</p>
+      <p class="muted">Только кнопки, другой счётчик, тема <code>auto</code> — следует
+      системной. Вторая кнопка уходит в приложение через <code>tg://</code> в текущей вкладке.</p>
       <div data-cw data-cw-source="partner-max" data-cw-counter="87654321"></div>
     </div>
 
     <div class="card">
       <h2>Блок 3 — <code>promo-form</code></h2>
-      <p class="muted">Форма спрятана за кнопкой, состав шагов другой.</p>
+      <p class="muted">Форма спрятана за кнопкой, состав шагов другой, тема <code>dark</code>
+      задана настройками источника.</p>
       <div data-cw data-cw-source="promo-form" data-cw-counter="12345678"></div>
     </div>
   </div>
@@ -92,9 +93,9 @@
   <div class="cols" style="margin-top:16px">
     <div class="card card--wide">
       <h2>Что доехало на сервер <button class="ctl" id="refresh" style="float:right">Обновить</button></h2>
-      <h3 style="font-size:14px;margin:8px 0 4px">Клики</h3>
-      <table><thead><tr><th>Время</th><th>Источник</th><th>Кнопка</th><th>Цель</th><th>Как</th><th>Метки</th></tr></thead>
-        <tbody id="clicks"><tr><td colspan="6" class="muted">пусто</td></tr></tbody></table>
+      <h3 style="font-size:14px;margin:8px 0 4px">Показы и нажатия</h3>
+      <table><thead><tr><th>Время</th><th>Событие</th><th>Источник</th><th>Кнопка</th><th>Цель</th><th>Как</th><th>Метки</th></tr></thead>
+        <tbody id="events"><tr><td colspan="7" class="muted">пусто</td></tr></tbody></table>
       <div id="ymbox" hidden>
         <h3 style="font-size:14px;margin:16px 0 4px">Вызовы аналитики (режим <code>?ymlog=1</code>)</h3>
         <table><thead><tr><th>Время</th><th>Счётчик</th><th>Метод</th><th>Цель</th><th>Параметры</th></tr></thead>
@@ -128,7 +129,7 @@
 <script async src="/widget.js"></script>
 <script>
 (function () {
-  var clicks = document.getElementById('clicks');
+  var events = document.getElementById('events');
   var leads = document.getElementById('leads');
 
   function cell(row, text) {
@@ -157,10 +158,11 @@
 
   function refresh() {
     fetch('/api/_state').then(function (r) { return r.json(); }).then(function (state) {
-      fill(clicks, state.clicks, function (row, c) {
-        cell(row, c.at); cell(row, c.source); cell(row, c.button);
-        cell(row, c.goal); cell(row, c.how); cell(row, tags(c.tags));
-      }, 6);
+      fill(events, state.events, function (row, c) {
+        cell(row, c.at); cell(row, c.kind === 'view' ? 'показ' : 'нажатие');
+        cell(row, c.source); cell(row, c.button); cell(row, c.goal);
+        cell(row, c.how); cell(row, tags(c.tags));
+      }, 7);
       fill(leads, state.leads, function (row, l) {
         cell(row, l.at); cell(row, l.source); cell(row, l.phone);
         cell(row, JSON.stringify(l.answers)); cell(row, tags(l.tags));

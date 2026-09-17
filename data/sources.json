@@ -2,6 +2,8 @@
   "landing-tg": {
     "title": "Напишите нам",
     "subtitle": "Ответим в мессенджере или перезвоним сами",
+    "theme": "light",
+    "goals": { "view": "widget_view" },
     "buttons": [
       {
         "id": "tg",
@@ -87,6 +89,8 @@
 
   "partner-max": {
     "title": "Связаться с нами",
+    "theme": "auto",
+    "goals": { "view": "widget_view" },
     "buttons": [
       {
         "id": "max",
@@ -112,6 +116,8 @@
   "promo-form": {
     "title": "Нужен расчёт?",
     "subtitle": "Четыре вопроса, меньше минуты",
+    "theme": "dark",
+    "goals": { "view": "widget_view" },
     "buttons": [
       {
         "id": "tg",

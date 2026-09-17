@@ -34,7 +34,9 @@
   var GOAL_TIMEOUT = 400;      // сколько ждём подтверждения от Метрики перед уходом на мессенджер
   var CLICK_GAP = 1500;        // окно, внутри которого повторный клик по той же кнопке не считается
   var PROGRESS_TTL = 14 * 24 * 3600 * 1000;
+  var LEAD_TTL = 3 * 24 * 3600 * 1000;   // дольше добиваться отправки бессмысленно
   var SEND_RETRIES = [2000, 5000, 15000, 60000];
+  var EVENT_PATH = '/api/event';
 
   var debug = false;
   function warn() {
@@ -139,6 +141,27 @@
     }
   }
 
+  // Яркие фирменные цвета мессенджеров с белым текстом дают контраст около 2:1 —
+  // читать тяжело, поэтому цвет подписи выбираем по яркости самой кнопки.
+  function luminance(hex) {
+    var c = String(hex || '').replace('#', '');
+    if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+    if (!/^[0-9a-f]{6}$/i.test(c)) return null;
+    var parts = [0, 2, 4].map(function (i) {
+      var v = parseInt(c.substr(i, 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2];
+  }
+
+  function textOn(background) {
+    var bg = luminance(background);
+    if (bg === null) return '#fff';
+    var onWhite = 1.05 / (bg + 0.05);
+    var onDark = (bg + 0.05) / (luminance('#15181c') + 0.05);
+    return onWhite >= onDark ? '#fff' : '#15181c';
+  }
+
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -237,11 +260,24 @@
     return false;
   }
 
-  // Счётчика на чужой странице может не быть — ставим свой. Если счётчик уже стоит,
-  // повторно его не инициализируем и настройки владельца сайта не трогаем.
+  // Счётчик сайта может стоять в подвале и подняться позже нас — поэтому сам init
+  // откладываем до полной загрузки и там ещё раз проверяем, не появился ли он.
+  // Если человек нажмёт кнопку раньше, init произойдёт прямо перед отправкой цели.
+  function initCounter(id) {
+    if (!id || counters[id] === 'done') return;
+    counters[id] = 'done';
+    try {
+      if (!counterKnown(id) && typeof window.ym === 'function') {
+        window.ym(id, 'init', { clickmap: false, trackLinks: false, accurateTrackBounce: true });
+      }
+    } catch (e) {
+      warn(e);
+    }
+  }
+
   function ensureCounter(id) {
     if (!id || counters[id]) return;
-    counters[id] = true;
+    counters[id] = 'pending';
     try {
       if (typeof window.ym !== 'function') {
         window.ym = function () { (window.ym.a = window.ym.a || []).push(arguments); };
@@ -252,11 +288,15 @@
         tag.onerror = function () { warn('metrika blocked'); };
         (document.head || document.documentElement).appendChild(tag);
       }
-      if (!counterKnown(id)) {
-        window.ym(id, 'init', { clickmap: false, trackLinks: false, accurateTrackBounce: true });
-      }
     } catch (e) {
       warn(e);
+    }
+    if (document.readyState === 'complete') {
+      initCounter(id);
+    } else {
+      window.addEventListener('load', function () {
+        setTimeout(function () { initCounter(id); }, 300);
+      });
     }
   }
 
@@ -266,6 +306,7 @@
    * после которого переход всё равно состоится.
    */
   function reachGoal(counterId, goal, params, done) {
+    initCounter(counterId);     // цель без init Метрика выбросит
     var finished = false;
     var timer = null;
     function finish() {
@@ -330,6 +371,16 @@
       var chain = Promise.resolve();
       items.forEach(function (item) {
         chain = chain.then(function () {
+          // Заявка, которую не удалось отдать за трое суток, уже неактуальна:
+          // перестаём долбить сервер, чтобы очередь не жила вечно.
+          if (Date.now() - (item.created || 0) > LEAD_TTL) {
+            drop(item.id);
+            settle(item.id, 'expired');
+            return;
+          }
+          // Сервер должен знать, сколько заявка пролежала: свежая и вчерашняя
+          // обрабатываются по-разному.
+          item.body.queued_ms = Date.now() - (item.created || Date.now());
           return post(item.url, item.body).then(function (res) {
             if (res.ok || res.status === 409) {
               drop(item.id);
@@ -429,54 +480,67 @@
   var CSS = [
     ':host{display:block}',
     '*,*::before,*::after{box-sizing:border-box}',
-    '.cw{font:400 15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;',
-    'color:#15181c;width:100%;max-width:420px;text-align:left}',
+    '.cw{--bg:#fff;--fg:#15181c;--muted:#5c6670;--line:#dfe4ea;--field:#c9d1d9;--accent:#3266c9;',
+    '--soft:#f7f9fb;--err:#c02626;--focus:#1a73e8;',
+    'font:400 15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;',
+    'color:var(--fg);width:100%;max-width:420px;text-align:left}',
+    // Тёмную тему включают настройки источника: у чужого сайта может быть светлая
+    // вёрстка при тёмной системной теме, поэтому «auto» — осознанный выбор, не умолчание.
+    '.cw[data-theme="dark"]{--bg:#1c2026;--fg:#e8ecf1;--muted:#a8b2bc;--line:#333a43;',
+    '--field:#3f4751;--soft:#232830;--err:#ff8080;--focus:#7aa7f5}',
+    '@media (prefers-color-scheme:dark){.cw[data-theme="auto"]{--bg:#1c2026;--fg:#e8ecf1;',
+    '--muted:#a8b2bc;--line:#333a43;--field:#3f4751;--soft:#232830;--err:#ff8080;--focus:#7aa7f5}}',
+    // Тёмный виджет может стоять на светлой странице, поэтому подкладывает себе
+    // собственный фон: иначе заголовок окажется светлым текстом на белом.
+    '.cw[data-theme="dark"]{background:var(--bg);padding:14px;border-radius:12px}',
+    '@media (prefers-color-scheme:dark){.cw[data-theme="auto"]{background:var(--bg);',
+    'padding:14px;border-radius:12px}}',
     '.cw__head{margin:0 0 10px}',
     '.cw__title{margin:0;font-size:16px;font-weight:600}',
-    '.cw__sub{margin:2px 0 0;font-size:13px;color:#5c6670}',
+    '.cw__sub{margin:2px 0 0;font-size:13px;color:var(--muted)}',
     '.cw__btns{display:flex;flex-direction:column;gap:8px}',
     '.cw__btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:12px 16px;',
-    'border-radius:10px;background:#3f74d8;color:#fff;font-size:15px;font-weight:600;text-decoration:none;',
-    '-webkit-tap-highlight-color:transparent}',
+    'border-radius:10px;background:var(--accent);color:#fff;font-size:15px;font-weight:600;',
+    'text-decoration:none;-webkit-tap-highlight-color:transparent}',
     '.cw__btn:hover{filter:brightness(.93)}',
     '.cw__btn:active{transform:translateY(1px)}',
     '.cw__form{margin-top:14px}',
-    '.cw__toggle{display:block;width:100%;min-height:48px;padding:12px 16px;border:1px solid #c9d1d9;',
-    'border-radius:10px;background:#fff;color:#15181c;font:inherit;font-weight:600;cursor:pointer}',
-    '.cw__toggle:hover{background:#f4f6f8}',
-    '.cw__card{border:1px solid #dfe4ea;border-radius:12px;padding:16px;background:#fff}',
-    '.cw__bar{height:3px;border-radius:2px;background:#e8ecf1;margin-bottom:14px;overflow:hidden}',
-    '.cw__bar i{display:block;height:100%;background:#3f74d8;transition:width .2s ease}',
+    '.cw__toggle{display:block;width:100%;min-height:48px;padding:12px 16px;border:1px solid var(--field);',
+    'border-radius:10px;background:var(--bg);color:var(--fg);font:inherit;font-weight:600;cursor:pointer}',
+    '.cw__toggle:hover{background:var(--soft)}',
+    '.cw__card{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--bg)}',
+    '.cw__bar{height:3px;border-radius:2px;background:var(--line);margin-bottom:14px;overflow:hidden}',
+    '.cw__bar i{display:block;height:100%;background:var(--accent);transition:width .2s ease}',
     '.cw__fs{border:0;margin:0;padding:0;min-width:0}',
     '.cw__q{padding:0;font-size:16px;font-weight:600;line-height:1.3}',
-    '.cw__hint{margin:4px 0 0;font-size:13px;color:#5c6670}',
+    '.cw__hint{margin:4px 0 0;font-size:13px;color:var(--muted)}',
     '.cw__opts{display:flex;flex-direction:column;gap:6px;margin-top:12px}',
-    '.cw__opt{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 12px;border:1px solid #dfe4ea;',
-    'border-radius:9px;cursor:pointer}',
-    '.cw__opt:hover{background:#f7f9fb}',
-    '.cw__opt input{width:18px;height:18px;margin:0;accent-color:#3f74d8;flex:none}',
-    '.cw__field{width:100%;margin-top:12px;padding:12px;border:1px solid #c9d1d9;border-radius:9px;',
-    'font:inherit;font-size:16px;color:#15181c;background:#fff}',
-    '.cw__field:focus{border-color:#3f74d8}',
+    '.cw__opt{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 12px;',
+    'border:1px solid var(--line);border-radius:9px;cursor:pointer}',
+    '.cw__opt:hover{background:var(--soft)}',
+    '.cw__opt input{width:18px;height:18px;margin:0;accent-color:var(--accent);flex:none}',
+    '.cw__field{width:100%;margin-top:12px;padding:12px;border:1px solid var(--field);border-radius:9px;',
+    'font:inherit;font-size:16px;color:var(--fg);background:var(--bg)}',
+    '.cw__field:focus{border-color:var(--accent)}',
     'textarea.cw__field{min-height:84px;resize:vertical}',
-    '.cw__consent{margin:10px 0 0;font-size:12px;color:#7b848e}',
-    '.cw__err{margin:10px 0 0;font-size:13px;color:#c02626;min-height:0}',
+    '.cw__consent{margin:10px 0 0;font-size:12px;color:var(--muted)}',
+    '.cw__err{margin:10px 0 0;font-size:13px;color:var(--err)}',
     '.cw__nav{display:flex;gap:8px;margin-top:14px}',
     '.cw__nav button{min-height:44px;padding:11px 18px;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}',
-    '.cw__next{flex:1;border:0;background:#3f74d8;color:#fff}',
+    '.cw__next{flex:1;border:0;background:var(--accent);color:#fff}',
     '.cw__next:hover{filter:brightness(.93)}',
     '.cw__next[disabled]{opacity:.6;cursor:default}',
-    '.cw__back{border:1px solid #c9d1d9;background:#fff;color:#15181c}',
-    '.cw__back:hover{background:#f4f6f8}',
-    '.cw__step-n{margin:12px 0 0;font-size:12px;color:#7b848e}',
+    '.cw__back{border:1px solid var(--field);background:var(--bg);color:var(--fg)}',
+    '.cw__back:hover{background:var(--soft)}',
+    '.cw__step-n{margin:12px 0 0;font-size:12px;color:var(--muted)}',
     '.cw__done{font-size:15px}',
     '.cw__done b{display:block;margin-bottom:4px;font-size:16px}',
-    '.cw__retry{margin-top:12px;min-height:44px;padding:11px 18px;border:1px solid #c9d1d9;border-radius:9px;',
-    'background:#fff;font:inherit;font-weight:600;cursor:pointer}',
+    '.cw__retry{margin-top:12px;min-height:44px;padding:11px 18px;border:1px solid var(--field);',
+    'border-radius:9px;background:var(--bg);color:var(--fg);font:inherit;font-weight:600;cursor:pointer}',
     '.cw__sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);',
     'white-space:nowrap;border:0}',
     '.cw a:focus-visible,.cw button:focus-visible,.cw input:focus-visible,.cw textarea:focus-visible,',
-    '.cw [tabindex]:focus-visible{outline:2px solid #1a73e8;outline-offset:2px}',
+    '.cw [tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}',
     '@media (max-width:480px){.cw{max-width:none}.cw__nav{flex-wrap:wrap}}',
     '@media (prefers-reduced-motion:reduce){.cw__bar i{transition:none}}'
   ].join('');
@@ -543,6 +607,7 @@
       root.appendChild(style);
 
       var wrap = el('div', 'cw');
+      wrap.setAttribute('data-theme', cfg.theme === 'dark' || cfg.theme === 'auto' ? cfg.theme : 'light');
       if (cfg.title || cfg.subtitle) {
         var head = el('div', 'cw__head');
         if (cfg.title) head.appendChild(el('p', 'cw__title', cfg.title));
@@ -552,6 +617,49 @@
       if (hasButtons) wrap.appendChild(buildButtons());
       if (hasForm) wrap.appendChild(buildForm());
       root.appendChild(wrap);
+      watchView();
+    }
+
+    // Показ считаем, когда виджет реально попал в окно, а не когда отрисовался:
+    // иначе конверсия «показ → нажатие» врёт на длинных страницах.
+    function watchView() {
+      var goal = (cfg.goals && cfg.goals.view) || 'widget_view';
+      var fired = false;
+      function fire() {
+        if (fired) return;
+        fired = true;
+        report('view', { goal: goal });
+        reachGoal(counterId, goal, { source: source });
+      }
+      if (!window.IntersectionObserver) {
+        fire();
+        return;
+      }
+      var watcher = new IntersectionObserver(function (entries) {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].isIntersecting) {
+            watcher.disconnect();
+            fire();
+            return;
+          }
+        }
+      }, { threshold: 0.4 });
+      watcher.observe(host);
+    }
+
+    // Свой счёт событий: он не зависит от блокировщика и переживает выгрузку страницы.
+    function report(kind, extra) {
+      var payload = {
+        kind: kind,
+        source: source,
+        tags: campaignTags,
+        page: location.href,
+        ts: Date.now()
+      };
+      if (extra) {
+        Object.keys(extra).forEach(function (key) { payload[key] = extra[key]; });
+      }
+      beacon(api + EVENT_PATH, payload);
     }
 
     /* --------------------------------------------------- кнопки в мессенджеры */
@@ -564,7 +672,10 @@
         var link = el('a', 'cw__btn', btn.label || 'Написать');
         link.href = href;
         link.rel = 'noopener noreferrer';
-        if (btn.color) link.style.background = btn.color;
+        if (btn.color) {
+          link.style.background = btn.color;
+          link.style.color = textOn(btn.color);
+        }
 
         // Обычные http-ссылки открываем в новой вкладке: страница остаётся живой,
         // и запросу аналитики никто не мешает доехать. Для схем вида tg:// вкладка
@@ -616,18 +727,7 @@
       }
       lastClick[btn.id] = now;
 
-      // Свой счёт уходит маячком: он не зависит ни от блокировщика, ни от того,
-      // успела ли загрузиться Метрика, и переживает выгрузку страницы.
-      beacon(api + '/api/click', {
-        cid: clickId,
-        source: source,
-        button: btn.id,
-        goal: btn.goal || null,
-        how: how,
-        tags: campaignTags,
-        page: location.href,
-        ts: now
-      });
+      report('click', { cid: clickId, button: btn.id, goal: btn.goal || null, how: how });
 
       reachGoal(counterId, btn.goal, { source: source, button: btn.id }, done);
     }
@@ -649,6 +749,7 @@
 
       var state = restore();
       var status = 'filling';        // filling | sending | sent | queued | failed
+      var trap = null;
       if (outbox.watch(state.leadId, function (result) { onSendResult(result); })) status = 'queued';
       var touched = false;
       var announced = null;
@@ -747,6 +848,7 @@
           control = drawText(step, fieldset);
         } else if (step.type === 'phone') {
           control = drawPhone(step, fieldset);
+          drawTrap(fieldset);
         }
 
         var error = el('p', 'cw__err');
@@ -858,6 +960,22 @@
         };
       }
 
+      // Ловушка для ботов: люди этого поля не видят и не могут в него попасть
+      // ни табом, ни диктором. Заполнено — заявку всё равно принимаем,
+      // но помечаем: резать по такому признаку живого человека нельзя.
+      function drawTrap(parent) {
+        var wrap = el('div', 'cw__sr');
+        wrap.setAttribute('aria-hidden', 'true');
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.tabIndex = -1;
+        input.autocomplete = 'off';
+        input.name = 'company';
+        wrap.appendChild(input);
+        parent.appendChild(wrap);
+        trap = input;
+      }
+
       function drawPhone(step, parent) {
         var input = document.createElement('input');
         input.className = 'cw__field';
@@ -901,7 +1019,9 @@
           phone: phone,
           tags: campaignTags,
           page: location.href,
-          ts: Date.now()
+          ts: Date.now(),
+          elapsed_ms: Date.now() - (state.started || Date.now()),
+          trap: trap ? trap.value : ''
         }, onSendResult);
       }
 
@@ -912,7 +1032,7 @@
           // Ответы стираем только после подтверждённой отправки: если сервер заявку
           // не принял, человек вернётся на страницу и продолжит с теми же ответами.
           store.remove(stateKey);
-        } else if (result === 'rejected') {
+        } else if (result === 'rejected' || result === 'expired') {
           status = 'failed';
         } else {
           status = 'queued';

@@ -6,8 +6,8 @@
 
     python3 server.py
 
-Данные выдуманные и лежат в data/sources.json. Клики и заявки пишутся
-в data/clicks.jsonl и data/leads.jsonl.
+Данные выдуманные и лежат в data/sources.json. События и заявки пишутся
+в data/events.jsonl и data/leads.jsonl.
 """
 
 import argparse
@@ -26,12 +26,21 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, 'data')
 SOURCES = os.path.join(DATA, 'sources.json')
 LEADS = os.path.join(DATA, 'leads.jsonl')
-CLICKS = os.path.join(DATA, 'clicks.jsonl')
+EVENTS = os.path.join(DATA, 'events.jsonl')
 
 MAX_BODY = 64 * 1024
 PHONE_DIGITS = re.compile(r'\D+')
 
+# Приём заявок: не больше LEAD_LIMIT штук с одного адреса за LEAD_WINDOW секунд.
+# Отвечаем 429 — виджет считает такой отказ временным и повторит попытку позже,
+# поэтому живой человек за общим NAT заявку не потеряет.
+LEAD_LIMIT = 30
+LEAD_WINDOW = 600
+
 lock = threading.Lock()
+
+# Время последних заявок по адресам — для ограничения частоты.
+lead_hits = {}
 
 # Состояние «сломанного сервера» для демо-страницы: ok | fail | slow | empty.
 demo_mode = {'config': 'ok', 'lead': 'ok'}
@@ -58,6 +67,18 @@ def tail(path, limit):
         except ValueError:
             pass
     return out
+
+
+def rate_limited(address):
+    now = time.time()
+    with lock:
+        hits = [t for t in lead_hits.get(address, []) if now - t < LEAD_WINDOW]
+        if len(hits) >= LEAD_LIMIT:
+            lead_hits[address] = hits
+            return True
+        hits.append(now)
+        lead_hits[address] = hits
+    return False
 
 
 def load_seen_leads():
@@ -200,7 +221,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             return self.send_json({
                 'mode': demo_mode,
-                'clicks': tail(CLICKS, 20),
+                'events': tail(EVENTS, 25),
                 'leads': tail(LEADS, 20),
             })
         if path == '/api/_mode':
@@ -223,8 +244,8 @@ class Handler(BaseHTTPRequestHandler):
         data = self.read_body()
         if path == '/api/lead':
             return self.api_lead(data)
-        if path == '/api/click':
-            return self.api_click(data)
+        if path == '/api/event':
+            return self.api_event(data)
         self.send_json({'error': 'not found'}, 404)
 
     # ------------------------------------------------------------ обработка
@@ -248,10 +269,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'buttons': [], 'form': None}, 404)
         return self.send_json(config)
 
-    def api_click(self, data):
+    def api_event(self, data):
         data = data or {}
-        log_line(CLICKS, {
+        kind = data.get('kind')
+        if kind not in ('view', 'click'):
+            return self.send_json({'error': 'unknown kind'}, 400)
+        log_line(EVENTS, {
             'at': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'kind': kind,
             'cid': data.get('cid'),
             'source': data.get('source'),
             'button': data.get('button'),
@@ -271,6 +296,10 @@ class Handler(BaseHTTPRequestHandler):
         if not data or not data.get('id'):
             return self.send_json({'error': 'bad request'}, 400)
 
+        if rate_limited(self.client_address[0]):
+            # Временный отказ: виджет подержит заявку в очереди и попробует ещё раз.
+            return self.send_json({'error': 'too many leads', 'retry_after': LEAD_WINDOW}, 429)
+
         lead_id = str(data['id'])[:64]
         with lock:
             duplicate = lead_id in seen_leads
@@ -281,6 +310,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'ok': True, 'duplicate': True})
 
         phone = normalize_phone(data.get('phone'))
+        queued_ms = int(data.get('queued_ms') or 0)
+        elapsed_ms = int(data.get('elapsed_ms') or 0)
+        # Ни одну заявку не выбрасываем: помечаем подозрительные и разбираем руками.
+        # Скрытое поле заполняют только боты, а заполнение быстрее трёх секунд
+        # для формы из нескольких шагов физически маловероятно.
+        suspicious = []
+        if (data.get('trap') or '').strip():
+            suspicious.append('trap')
+        if 0 < elapsed_ms < 3000:
+            suspicious.append('too_fast')
         log_line(LEADS, {
             'at': time.strftime('%Y-%m-%d %H:%M:%S'),
             'id': lead_id,
@@ -290,8 +329,12 @@ class Handler(BaseHTTPRequestHandler):
             'answers': data.get('answers') or {},
             'tags': data.get('tags') or {},
             'page': data.get('page'),
+            'queued_ms': queued_ms,          # сколько заявка пролежала в очереди у человека
+            'elapsed_ms': elapsed_ms,        # сколько он заполнял форму
+            'suspicious': suspicious,
         })
-        self.send_json({'ok': True, 'duplicate': False, 'phone': phone})
+        self.send_json({'ok': True, 'duplicate': False, 'phone': phone,
+                        'suspicious': bool(suspicious)})
 
     def api_mode(self, query):
         target = (query.get('target') or ['config'])[0]
@@ -323,7 +366,7 @@ def run(port, open_browser=True, verbose=True, host='127.0.0.1'):
     print('Демо: %s' % url)
     if host == '0.0.0.0':
         print('С телефона в той же сети: http://%s:%d/' % (local_ip(), port))
-    print('Заявки: data/leads.jsonl, клики: data/clicks.jsonl. Остановить — Ctrl+C.')
+    print('Заявки: data/leads.jsonl, события: data/events.jsonl. Остановить — Ctrl+C.')
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
