@@ -52,7 +52,7 @@ demo/blocked.html   страница, где аналитика заблокир
 
 API сервера: `GET /api/config?source=…`, `POST /api/lead`, `POST /api/event`.
 Служебные, только для демо: `GET /api/_mode?target=config|lead&mode=ok|fail|slow|empty`
-и `GET /api/_state` — журнал последних кликов и заявок.
+и `GET /api/_state` — журнал последних событий и заявок. Обе доступны только из локальной сети.
 
 ## Где проверять сценарии из задания
 
